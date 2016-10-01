@@ -31,7 +31,11 @@ unsigned char *LoadBitmapFile(char *filename, BITMAPINFOHEADER *bitmapInfoHeader
     fseek(filePtr, bitmapFileHeader->bfOffBits, SEEK_SET);
 
     //allocate enough memory for the bitmap image data
-    bitmapImage = (unsigned char*)malloc(bitmapInfoHeader->biSizeImage);
+    if(bitmapInfoHeader->biBitCount!=32 && (bitmapInfoHeader->biWidth%4 != 0))
+        bitmapImage = (unsigned char*)malloc(bitmapInfoHeader->biSizeImage 
+            - (4 - (bitmapInfoHeader->biSizeImage%4))*bitmapInfoHeader->biHeight);
+    else
+        bitmapImage = (unsigned char*)malloc(bitmapInfoHeader->biSizeImage);
 
     //verify memory allocation
     if (!bitmapImage)
@@ -41,8 +45,20 @@ unsigned char *LoadBitmapFile(char *filename, BITMAPINFOHEADER *bitmapInfoHeader
         return NULL;
     }
 
+    int bytesPerPixel = (bitmapInfoHeader->biBitCount) / 8;
+
     //read in the bitmap image data
-    fread(bitmapImage,bitmapInfoHeader->biSizeImage,1,filePtr);
+    int padding = 4 - (bytesPerPixel*bitmapInfoHeader->biWidth)%4;
+    if(bitmapInfoHeader->biBitCount!=32 && (bytesPerPixel*bitmapInfoHeader->biWidth%4 != 0)){
+        for(int row = 0; row < bitmapInfoHeader->biHeight; row++){
+            for(int col = 0; col < bytesPerPixel*bitmapInfoHeader->biWidth; col++)
+                fread(&bitmapImage[row*bytesPerPixel*bitmapInfoHeader->biWidth + col],1,1,filePtr);
+            for(int pad = 0; pad < padding; pad++)
+                fseek(filePtr,1,SEEK_CUR);
+        }
+    }
+    else
+        fread(bitmapImage,bitmapInfoHeader->biSizeImage,1,filePtr);
 
     //make sure bitmap image data was read
     if (bitmapImage == NULL)
@@ -52,7 +68,7 @@ unsigned char *LoadBitmapFile(char *filename, BITMAPINFOHEADER *bitmapInfoHeader
     }
 
     //swap the r and b values to get RGB (bitmap is BGR)
-    for (imageIdx = 0;imageIdx < bitmapInfoHeader->biSizeImage;imageIdx+=4)
+    for (imageIdx = 0;imageIdx < bitmapInfoHeader->biWidth*bitmapInfoHeader->biHeight*bytesPerPixel;imageIdx+=bytesPerPixel)
     {
         tempRGB = bitmapImage[imageIdx];
         bitmapImage[imageIdx] = bitmapImage[imageIdx + 2];
@@ -103,8 +119,9 @@ void WriteBitmapFile(char *filename, BITMAPINFOHEADER *bitmapInfoHeader,
         return;
     }
 
+    int bytesPerPixel = (bitmapInfoHeader->biBitCount) / 8;
     //swap the r and b values to get RGB (bitmap is BGR)
-    for (imageIdx = 0;imageIdx < bitmapInfoHeader->biSizeImage;imageIdx+=4)
+    for (imageIdx = 0;imageIdx < bitmapInfoHeader->biWidth*bitmapInfoHeader->biHeight*bytesPerPixel;imageIdx+=bytesPerPixel)
     {
         tempRGB = bitmapImage[imageIdx];
         bitmapImage[imageIdx] = bitmapImage[imageIdx + 2];
@@ -112,7 +129,22 @@ void WriteBitmapFile(char *filename, BITMAPINFOHEADER *bitmapInfoHeader,
     }
 
     //write the bitmap image data
-    fwrite(bitmapImage,bitmapInfoHeader->biSizeImage,1,filePtr);
+    unsigned char* null_char = new unsigned char;
+    *null_char = 0;
+    int padding = 4 - (bytesPerPixel*bitmapInfoHeader->biWidth)%4;
+    if(bitmapInfoHeader->biBitCount!=32 && (bytesPerPixel*bitmapInfoHeader->biWidth%4 != 0)){
+        for(int row = 0; row < bitmapInfoHeader->biHeight; row++){
+            for(int col = 0; col < bytesPerPixel*bitmapInfoHeader->biWidth; col++)
+                fwrite(&bitmapImage[row*bytesPerPixel*bitmapInfoHeader->biWidth 
+                    + col],1,1,filePtr);
+            for(int pad = 0; pad < padding; pad++)
+                fwrite(null_char,1,1,filePtr);
+        }
+    }
+    else
+        fwrite(bitmapImage,bitmapInfoHeader->biSizeImage,1,filePtr);
+
+
 
     //close file and return bitmap iamge data
     fclose(filePtr);
